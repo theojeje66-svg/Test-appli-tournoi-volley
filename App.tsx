@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
-import { ViewState, Team, Match, Tournament } from './types';
+import React, { useState, useEffect } from 'react';
+import type { Team, Match, Tournament } from './types';
+import { ViewState } from './types';
 import MatchCard from './components/MatchCard';
-import { 
-  Trophy, 
-  Users, 
-  Calendar, 
-  Activity, 
-  Plus, 
-  Trash2, 
-  Sparkles, 
+import {
+  Trophy,
+  Users,
+  Calendar,
+  Activity,
+  Plus,
+  Trash2,
+  Sparkles,
   Menu,
   ChevronDown,
   ChevronUp,
@@ -46,10 +47,8 @@ function shuffleArray<T>(array: T[]): T[] {
 // Helper: Generate Randomized Round Robin Schedule
 const generateRoundRobinMatches = (teams: Team[]): Match[] => {
   const matches: Match[] = [];
-  
-  // 1. Shuffle teams initially
   let rotation = shuffleArray([...teams]);
-  
+
   // Add dummy if odd number of teams
   if (rotation.length % 2 !== 0) {
     rotation.push({ id: 'dummy', name: 'BYE', players: [], points: 0, matchesPlayed: 0, setsWon: 0, setsLost: 0, pointsWon: 0, pointsLost: 0 });
@@ -72,7 +71,7 @@ const generateRoundRobinMatches = (teams: Team[]): Match[] => {
          const teamB = isHome ? t2 : t1;
 
          roundMatches.push({
-            id: Math.random().toString(36).substr(2, 9),
+            id: Math.random().toString(36).slice(2, 11),
             teamAId: teamA.id,
             teamBId: teamB.id,
             teamAName: teamA.name,
@@ -121,7 +120,7 @@ const calculateStandings = (teams: Team[], matches: Match[]): Team[] => {
       let pointsB = 0;
 
       m.sets.forEach(s => {
-        if (s.teamA > s.teamB) setsA++; else setsB++;
+        if (s.teamA > s.teamB) setsA++; else if (s.teamB > s.teamA) setsB++;
         pointsA += s.teamA;
         pointsB += s.teamB;
       });
@@ -130,6 +129,11 @@ const calculateStandings = (teams: Team[], matches: Match[]): Team[] => {
       teamA.setsLost += setsB;
       teamA.pointsWon += pointsA;
       teamA.pointsLost += pointsB;
+
+      teamB.setsWon += setsB;
+      teamB.setsLost += setsA;
+      teamB.pointsWon += pointsB;
+      teamB.pointsLost += pointsA;
 
       // Custom Scoring Logic:
       // Match gagné : 3 points
@@ -192,7 +196,8 @@ const App: React.FC = () => {
   const [activeTournamentId, setActiveTournamentId] = useState<string | null>(null);
   
   // View State within a Tournament
-  const [view, setView] = useState<ViewState>(ViewState.DASHBOARD);
+  const [view, setView] = useState<ViewState>(ViewState.DASHBOARD);  git add App.tsx global.d.ts tsconfig.build.json package.json
+  
   
   // Inputs & UI State
   const [inputTournamentName, setInputTournamentName] = useState('');
@@ -207,6 +212,26 @@ const App: React.FC = () => {
 
   // Computed: Active Tournament
   const activeTournament = tournaments.find(t => t.id === activeTournamentId);
+  const standings = activeTournament ? calculateStandings(activeTournament.teams, activeTournament.matches) : [];
+
+  // Create a lightweight JSON representation of the active tournament matches
+  // so we can depend on it in the effect without watching the whole `tournaments` array
+  const activeMatchesJson = activeTournament ? JSON.stringify(
+    activeTournament.matches.map(m => ({ id: m.id, sets: m.sets, status: m.status, winnerId: (m as any).winnerId }))
+  ) : null;
+
+  useEffect(() => {
+    if (!activeTournament) return;
+
+    const newTeams = calculateStandings(activeTournament.teams, activeTournament.matches);
+    const teamsIdsEqual = JSON.stringify(newTeams.map(t => t.id)) === JSON.stringify(activeTournament.teams.map(t => t.id));
+
+    // Only update tournaments' teams when the order/stats actually changed to avoid loops
+    if (!teamsIdsEqual) {
+      setTournaments(prev => prev.map(t => t.id === activeTournamentId ? { ...t, teams: newTeams } : t));
+    }
+  // we intentionally depend on the serialized matches so updates to sets/status trigger this
+  }, [activeTournamentId, activeMatchesJson]);
 
   // --- Helpers for updating active tournament ---
   const updateActiveTournament = (updater: (t: Tournament) => Tournament) => {
@@ -224,7 +249,7 @@ const App: React.FC = () => {
   const handleCreateTournament = () => {
     if (!inputTournamentName.trim()) return;
     const newTournament: Tournament = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).slice(2, 11),
       name: inputTournamentName,
       createdAt: Date.now(),
       teams: [],
@@ -244,40 +269,28 @@ const App: React.FC = () => {
   };
 
   const handleRenameTournament = () => {
-    if (editedTitle.trim()) {
-      updateActiveTournament(t => ({ ...t, name: editedTitle }));
-    }
+    if (editedTitle.trim()) updateActiveTournament(t => ({ ...t, name: editedTitle }));
     setIsEditingTitle(false);
   };
-
-  // --- Team & Player Handlers ---
 
   const handleAddTeam = () => {
     if (!inputTeamName.trim()) return;
     const newTeam: Team = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).slice(2, 11),
       name: inputTeamName,
       players: [],
       points: 0, matchesPlayed: 0, setsWon: 0, setsLost: 0, pointsWon: 0, pointsLost: 0
     };
-    
-    updateActiveTournament(t => ({
-      ...t,
-      teams: [...t.teams, newTeam]
-    }));
+    updateActiveTournament(t => ({ ...t, teams: [...t.teams, newTeam] }));
     setInputTeamName('');
   };
 
   const handleRemoveTeam = (id: string) => {
-    updateActiveTournament(t => ({
-      ...t,
-      teams: t.teams.filter(team => team.id !== id)
-    }));
+    updateActiveTournament(t => ({ ...t, teams: t.teams.filter(team => team.id !== id) }));
   };
 
   const handleAddPlayer = (teamId: string) => {
     if (!inputPlayerName.trim()) return;
-    
     updateActiveTournament(t => ({
       ...t,
       teams: t.teams.map(team => {
@@ -285,9 +298,9 @@ const App: React.FC = () => {
           return {
             ...team,
             players: [
-              ...team.players, 
-              { 
-                id: Math.random().toString(36).substr(2, 9), 
+              ...team.players,
+              {
+                id: Math.random().toString(36).slice(2, 11),
                 name: inputPlayerName,
                 position: inputPlayerPosition,
                 pointsScored: 0
@@ -304,15 +317,7 @@ const App: React.FC = () => {
   const handleRemovePlayer = (teamId: string, playerId: string) => {
     updateActiveTournament(t => ({
       ...t,
-      teams: t.teams.map(team => {
-        if (team.id === teamId) {
-          return {
-            ...team,
-            players: team.players.filter(p => p.id !== playerId)
-          };
-        }
-        return team;
-      })
+      teams: t.teams.map(team => team.id === teamId ? { ...team, players: team.players.filter(p => p.id !== playerId) } : team)
     }));
   };
 
@@ -323,12 +328,7 @@ const App: React.FC = () => {
         if (team.id === teamId) {
           return {
             ...team,
-            players: team.players.map(p => {
-              if (p.id === playerId) {
-                return { ...p, pointsScored: Math.max(0, p.pointsScored + delta) };
-              }
-              return p;
-            })
+            players: team.players.map(p => p.id === playerId ? { ...p, pointsScored: Math.max(0, p.pointsScored + delta) } : p)
           };
         }
         return team;
@@ -337,27 +337,16 @@ const App: React.FC = () => {
   };
 
   const toggleTeamExpand = (id: string) => {
-    if (expandedTeamId === id) {
-      setExpandedTeamId(null);
-    } else {
-      setExpandedTeamId(id);
-      setInputPlayerName(''); 
-      setInputPlayerPosition(POSITIONS[0]);
-    }
+    if (expandedTeamId === id) setExpandedTeamId(null);
+    else { setExpandedTeamId(id); setInputPlayerName(''); setInputPlayerPosition(POSITIONS[0]); }
   };
-
-  // --- Schedule Handlers ---
 
   const handleGenerateSchedule = () => {
     if (!activeTournament || activeTournament.teams.length < 2) return;
     setIsGenerating(true);
-    
     setTimeout(() => {
       const generatedMatches = generateRoundRobinMatches(activeTournament.teams);
-      updateActiveTournament(t => ({
-        ...t,
-        matches: generatedMatches
-      }));
+      updateActiveTournament(t => ({ ...t, matches: generatedMatches }));
       setView(ViewState.MATCHES);
       setIsGenerating(false);
     }, 600);
@@ -365,14 +354,24 @@ const App: React.FC = () => {
 
   const handleMatchUpdate = (updatedMatch: Match) => {
     updateActiveTournament(t => {
-      const newMatches = t.matches.map(m => m.id === updatedMatch.id ? updatedMatch : m);
-      // Immediately calculate standings on match update
+      const matchWithWinner: Match = { ...updatedMatch };
+      if (matchWithWinner.status === 'FINISHED') {
+        let setsA = 0;
+        let setsB = 0;
+        matchWithWinner.sets.forEach(s => {
+          if (s.teamA > s.teamB) setsA++;
+          else if (s.teamB > s.teamA) setsB++;
+        });
+        if (setsA > setsB) matchWithWinner.winnerId = matchWithWinner.teamAId;
+        else if (setsB > setsA) matchWithWinner.winnerId = matchWithWinner.teamBId;
+        else delete (matchWithWinner as any).winnerId;
+      } else {
+        delete (matchWithWinner as any).winnerId;
+      }
+
+      const newMatches = t.matches.map(m => m.id === matchWithWinner.id ? matchWithWinner : m);
       const newTeams = calculateStandings(t.teams, newMatches);
-      return {
-        ...t,
-        matches: newMatches,
-        teams: newTeams
-      };
+      return { ...t, matches: newMatches, teams: newTeams };
     });
   };
 
@@ -478,25 +477,25 @@ const App: React.FC = () => {
               <h3 className="text-slate-500 font-semibold">Leader</h3>
               <Trophy className="text-yellow-500" />
             </div>
-            <div className="text-2xl font-bold text-slate-800">{activeTournament.teams[0]?.name || '-'}</div>
-            <div className="text-sm text-slate-400 mt-1">{activeTournament.teams[0]?.points || 0} points</div>
+            <div className="text-2xl font-bold text-slate-800">{standings[0]?.name || '-'}</div>
+            <div className="text-sm text-slate-400 mt-1">{standings[0]?.points || 0} points</div>
           </div>
            <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
              <div className="flex items-center justify-between mb-4">
               <h3 className="text-slate-500 font-semibold">Équipes</h3>
               <Users className="text-indigo-500" />
             </div>
-            <div className="text-2xl font-bold text-slate-800">{activeTournament.teams.length}</div>
+            <div className="text-2xl font-bold text-slate-800">{standings.length}</div>
             <div className="text-sm text-slate-400 mt-1">En compétition</div>
           </div>
         </div>
 
-        {activeTournament.teams.length > 0 && (
+        {standings.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
              <h3 className="text-lg font-bold text-slate-800 mb-6">Performance des Équipes (Points)</h3>
              <div className="h-64 w-full">
                <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={activeTournament.teams}>
+                 <BarChart data={standings}>
                    <XAxis dataKey="name" tick={{fontSize: 12}} stroke="#94a3b8" />
                    <YAxis stroke="#94a3b8" />
                    <Tooltip 
@@ -504,7 +503,7 @@ const App: React.FC = () => {
                      cursor={{fill: '#f1f5f9'}}
                    />
                    <Bar dataKey="points" radius={[4, 4, 0, 0]}>
-                      {activeTournament.teams.map((entry, index) => (
+                      {standings.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={index === 0 ? '#4f46e5' : '#94a3b8'} />
                       ))}
                    </Bar>
@@ -529,15 +528,7 @@ const App: React.FC = () => {
 
   const renderRankings = () => {
     if (!activeTournament) return null;
-    // Flatten players for ranking
-    const allPlayers = activeTournament.teams.flatMap(team => 
-      team.players.map(player => ({
-        ...player,
-        teamName: team.name
-      }))
-    );
-    
-    // Sort players by points scored (descending)
+    const allPlayers = standings.flatMap(team => team.players.map(player => ({ ...player, teamName: team.name })));
     allPlayers.sort((a, b) => b.pointsScored - a.pointsScored);
 
     return (
@@ -561,7 +552,7 @@ const App: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {activeTournament.teams.map((team, index) => (
+                {standings.map((team, index) => (
                   <tr key={team.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-900">
                       <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${index === 0 ? 'bg-yellow-100 text-yellow-700' : index === 1 ? 'bg-gray-100 text-gray-700' : index === 2 ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-500'}`}>
