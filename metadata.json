@@ -1,0 +1,5 @@
+{
+  "name": "Volley Ball Championat",
+  "description": "Une application complète de gestion de tournois de volley-ball. Génération de calendriers et suivi des scores en temps réel.",
+  "requestFramePermissions": []
+}
